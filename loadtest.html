@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>수학천국 부하 테스트</title>
+<script>window.SUPA={url:'https://kxezpongzqaqgmhhqohd.supabase.co',key:'sb_publishable_xn_fkQTpWv7XdsbCaNdEJQ_wWRVftf2'};</script>
+<style>
+:root{--line:#5a3b8c;--text:#3b2a5a;--sub:#7a6b96;--good:#2fc28a;--bad:#ff5a7a;color-scheme:light}
+*{box-sizing:border-box}
+body{margin:0;font-family:'Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;color:var(--text);background:#eef6ff}
+.wrap{max-width:720px;margin:0 auto;padding:18px 16px 40px;display:flex;flex-direction:column;gap:14px}
+h1{margin:0;font-size:24px}
+.card{background:#fff;border-radius:18px;padding:16px;box-shadow:0 0 0 2px var(--line);display:flex;flex-direction:column;gap:10px}
+label{font-size:14px;color:var(--sub)}
+input,select{font:inherit;font-size:16px;padding:8px 10px;border-radius:10px;border:2px solid #cfc3e6}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
+.row>div{display:flex;flex-direction:column;gap:4px}
+button{font:inherit;font-size:16px;padding:10px 18px;border-radius:999px;border:2px solid var(--line);background:#ffd23f;cursor:pointer}
+button:disabled{opacity:.5}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.grid div{background:#f6f2ff;border-radius:12px;padding:8px;text-align:center}
+.grid b{display:block;font-size:22px}
+.grid span{font-size:12px;color:var(--sub)}
+.bar{height:12px;border-radius:9px;background:#e4dcf3;overflow:hidden}.bar i{display:block;height:100%;width:0;background:var(--good);transition:width .3s}
+.verdict{font-size:17px;line-height:1.6;border-radius:12px;padding:10px 12px}
+.ok{background:#dcfff0}.warn{background:#fff6cc}.no{background:#ffe0e8}
+.log{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:var(--sub);max-height:140px;overflow:auto;white-space:pre-wrap}
+@media (max-width:520px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>수학천국 부하 테스트</h1>
+  <div class="card">
+    <div style="line-height:1.6;font-size:14px">가상 학생들이 동시에 점수를 저장하고 랭킹을 보는 상황을 흉내 내요. 시험용 학교를 잠깐 만들었다가 끝나면 기록까지 모두 지워요.<br>
+    <b>참고</b>: 학생 1만 명이 동시에 플레이할 때 실제로 몰리는 양은 대략 <b>초당 100~200건</b>이에요.</div>
+    <div class="row">
+      <div><label>관리자 비밀번호</label><input id="pw" type="password"></div>
+      <div><label>규모</label><select id="preset">
+        <option value="20,15">가볍게 · 초당 20건 · 15초</option>
+        <option value="100,30" selected>학교 여러 곳 · 초당 100건 · 30초</option>
+        <option value="200,30">1만 명 규모 · 초당 200건 · 30초</option>
+        <option value="400,20">한계 확인 · 초당 400건 · 20초</option>
+      </select></div>
+      <button id="go">시작</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="bar"><i id="bar"></i></div>
+    <div class="grid">
+      <div><b id="sent">0</b><span>보낸 요청</span></div>
+      <div><b id="okc">0</b><span>성공</span></div>
+      <div><b id="fail">0</b><span>실패</span></div>
+      <div><b id="rps">0</b><span>초당 처리</span></div>
+      <div><b id="p50">-</b><span>응답 시간 (보통)</span></div>
+      <div><b id="p95">-</b><span>응답 시간 (느린 5%)</span></div>
+      <div><b id="pmax">-</b><span>가장 느린 응답</span></div>
+      <div><b id="inflight">0</b><span>처리 중</span></div>
+    </div>
+    <div class="verdict" id="verdict" hidden></div>
+    <div class="log" id="log"></div>
+  </div>
+</div>
+<script>
+(function(){
+var $=function(s){return document.querySelector(s);}, S=window.SUPA;
+function log(t){ $('#log').textContent+=t+'\n'; $('#log').scrollTop=1e9; }
+function rpc(fn,body){ var t0=performance.now(); return fetch(S.url+'/rest/v1/rpc/'+fn,{method:'POST',headers:{apikey:S.key,'Content-Type':'application/json'},body:JSON.stringify(body||{})})
+  .then(function(r){ return r.text().then(function(t){ var j=null; try{ j=t?JSON.parse(t):null; }catch(e){} if(!r.ok) throw new Error((j&&j.message)||('HTTP '+r.status)); return {data:j,ms:performance.now()-t0}; }); }); }
+function pct(a,p){ if(!a.length) return 0; var s=a.slice().sort(function(x,y){return x-y;}); return s[Math.min(s.length-1,Math.floor(s.length*p))]; }
+$('#go').onclick=function(){
+  var pw=$('#pw').value; var pr=$('#preset').value.split(','), RATE=+pr[0], DUR=+pr[1];
+  var school=null, sent=0, ok=0, fail=0, inflight=0, lat=[], errs={}, t0=0, done=false;
+  $('#go').disabled=true; $('#verdict').hidden=true; $('#log').textContent='';
+  log('시험용 학교 만드는 중…');
+  rpc('admin_create',{p_pw:pw,p_name:'부하테스트 '+new Date().toLocaleTimeString()}).then(function(r){
+    school=r.data.code; log('시험용 학교 '+school+' · 초당 '+RATE+'건 × '+DUR+'초 시작');
+    t0=performance.now(); var tick=0;
+    var iv=setInterval(function(){
+      var el=(performance.now()-t0)/1000; if(el>=DUR){ clearInterval(iv); finish(); return; }
+      var n=Math.round(RATE/10); // 0.1초마다
+      for(var i=0;i<n;i++) one();
+      tick++; if(tick%5===0) draw();
+    },100);
+  }).catch(function(e){ log('시작 실패: '+e.message); $('#go').disabled=false; });
+  function one(){
+    sent++; inflight++;
+    var p = Math.random()<0.8
+      ? rpc('submit_score',{p_school:school,p_name:'LT'+Math.floor(Math.random()*5000),p_game:'g'+(1+Math.floor(Math.random()*13)),p_score:1+Math.floor(Math.random()*30000)})
+      : rpc('get_rankings',{p_school:school});
+    p.then(function(r){ ok++; lat.push(r.ms); }).catch(function(e){ fail++; var k=e.message.slice(0,60); errs[k]=(errs[k]||0)+1; }).then(function(){ inflight--; });
+  }
+  function draw(){ var el=Math.max(.1,(performance.now()-t0)/1000);
+    $('#sent').textContent=sent; $('#okc').textContent=ok; $('#fail').textContent=fail; $('#rps').textContent=Math.round(ok/el); $('#inflight').textContent=inflight;
+    $('#p50').textContent=Math.round(pct(lat,.5))+'ms'; $('#p95').textContent=Math.round(pct(lat,.95))+'ms'; $('#pmax').textContent=Math.round(pct(lat,1))+'ms';
+    $('#bar').style.width=Math.min(100,el/DUR*100)+'%'; }
+  function finish(){
+    log('남은 요청 기다리는 중…');
+    var w=setInterval(function(){ draw(); if(inflight>0&&(performance.now()-t0)/1000<DUR+30) return; clearInterval(w);
+      draw(); var rate=fail/Math.max(1,sent), p95=pct(lat,.95);
+      var v=$('#verdict'); v.hidden=false;
+      if(rate<0.005&&p95<1500){ v.className='verdict ok'; v.innerHTML='✅ <b>여유 있어요.</b> 이 정도 몰려도 학생들이 기다림 없이 저장할 수 있어요.'; }
+      else if(rate<0.03&&p95<4000){ v.className='verdict warn'; v.innerHTML='⚠️ <b>버티지만 느려요.</b> 일부 학생은 몇 초 기다리거나 자동 재시도로 저장돼요.'; }
+      else { v.className='verdict no'; v.innerHTML='❌ <b>감당하기 어려워요.</b> 실패가 많거나 응답이 너무 느려요. 이 결과 화면을 캡처해서 보내 주세요.'; }
+      Object.keys(errs).forEach(function(k){ log('실패 '+errs[k]+'건: '+k); });
+      log('시험용 학교와 기록 지우는 중…');
+      rpc('admin_delete',{p_pw:pw,p_code:school}).then(function(){ log('정리 완료'); }).catch(function(e){ log('정리 실패: '+e.message+' (관리자 페이지에서 "부하테스트" 학교를 삭제해 주세요)'); }).then(function(){ $('#go').disabled=false; });
+    },500);
+  }
+};
+})();
+</script>
+</body>
+</html>
